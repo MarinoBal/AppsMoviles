@@ -1,18 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View, Button, TextInput, Alert } from 'react-native';
 
-// Importamos los componentes preconstruidos de React Native
-import { 
-  StyleSheet,       // Para crear los estilos (es el motor de CSS de React Native).
-  Text,             // Para mostrar cualquier texto en pantalla.
-  View,             // El contenedor principal .
-  TextInput,        // La caja donde el usuario escribe (equivalente a <input type="text">).
-  Button,           // Un botón nativo.
-  FlatList,         // Una lista inteligente que solo renderiza los elementos que caben en pantalla.
-  TouchableOpacity  // Un contenedor que hace que su contenido reaccione al toque oscureciéndose.
-} from 'react-native';
-
-// FUNCIÓN PRINCIPAL El componente que representa la pantalla entera
 export default function App() {
   const [pantallaActual, setPantallaActual] = useState('registro1');
   const [nombre, setNombre] = useState('');
@@ -40,6 +28,7 @@ export default function App() {
       Alert.alert("Error", "La contraseña debe tener al menos 6 caracteres.");
       return;
     }
+
 
     Alert.alert(
       'Registro exitoso',
@@ -125,7 +114,6 @@ export default function App() {
   )
 }
 
-// ZONA DE ESTILOS (El diseño visual estructurado)
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
