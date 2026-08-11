@@ -41,7 +41,6 @@ export default function App() {
       return;
     }
 
-
     Alert.alert(
       'Registro exitoso',
       `Hola ${nombre}, tu registro ha sido exitoso.`,
