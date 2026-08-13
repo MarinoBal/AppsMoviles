@@ -70,7 +70,8 @@ export default function App() {
       </View>
     );
   }
-
+ 
+  
   //lista de empleados
   if (pantallaActual === 'Lista') {
     return (
