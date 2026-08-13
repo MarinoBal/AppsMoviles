@@ -71,7 +71,7 @@ export default function App() {
     );
   }
  
-  
+
   //lista de empleados
   if (pantallaActual === 'Lista') {
     return (
@@ -98,6 +98,7 @@ export default function App() {
     );
   }
 
+  
   //pantalla de registro
   return (
     <View style={styles.contenedor}>
