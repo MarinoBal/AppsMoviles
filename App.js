@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ActivityIndicator, FlatList, Image } from 'react-native';
 
+// Importamos los componentes preconstruidos de React Native
+import { 
+  StyleSheet,       // Para crear los estilos (es el motor de CSS de React Native).
+  Text,             // Para mostrar cualquier texto en pantalla.
+  View,             // El contenedor principal .
+  TextInput,        // La caja donde el usuario escribe (equivalente a <input type="text">).
+  Button,           // Un botón nativo.
+  FlatList,         // Una lista inteligente que solo renderiza los elementos que caben en pantalla.
+  TouchableOpacity  // Un contenedor que hace que su contenido reaccione al toque oscureciéndose.
+} from 'react-native';
+
+// FUNCIÓN PRINCIPAL El componente que representa la pantalla entera
 export default function App() {
   // NOTA: Estas son las líneas ocultas (6-19) necesarias para que la lógica funcione
   const [usuarios, setUsuarios] = useState([]);
@@ -69,7 +81,7 @@ export default function App() {
         )}
       />
     </View>
-  );
+  )
 }
 
 // ESTILOS VISUALES
@@ -119,6 +131,37 @@ const styles = StyleSheet.create({
   infoUsuario: {
     flex: 1, 
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+  tituloPrincipal: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  subtitulo: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  etiqueta: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#444444',
+    marginBottom: 5,
+  },
+  input: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d1d1',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    height: 50,
+    marginBottom: 15,
+    fontSize: 16,
   },
   nombreUsuario: {
     fontSize: 18,
