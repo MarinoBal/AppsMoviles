@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View, Button, TextInput, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, ActivityIndicator, FlatList, Image } from 'react-native';
 
 // Importamos los componentes preconstruidos de React Native
 import { 
@@ -14,129 +14,122 @@ import {
 
 // FUNCIÓN PRINCIPAL El componente que representa la pantalla entera
 export default function App() {
-  const [pantallaActual, setPantallaActual] = useState('registro1');
-  const [nombre, setNombre] = useState('');
-  const [correo, setCorreo] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [password, setPassword] = useState('');
+  // NOTA: Estas son las líneas ocultas (6-19) necesarias para que la lógica funcione
+  const [usuarios, setUsuarios] = useState([]);
+  const [cargando, setCargando] = useState(true);
 
-  const validarRegistro = () => {
-    if (!nombre.trim() || !correo.trim() || !telefono.trim() || !password.trim()) {
-      Alert.alert("Error", "Por favor, complete todos los campos.");
-      return;
+  useEffect(() => {
+    descargarUsuarios();
+  }, []);
+
+  const descargarUsuarios = async () => {
+    try {
+      // Hacemos la petición a la base de datos pública (pedimos 10 usuarios)
+      const respuesta = await fetch('https://randomuser.me/api/?results=10');
+      // Convertimos la respuesta a formato JSON
+      const json = await respuesta.json();
+
+      // Guardamos la lista de usuarios en la memoria de la app
+      setUsuarios(json.results);
+      // Apagamos la ruedita de carga
+      setCargando(false);
+    } catch (error) {
+      console.error("Hubo un problema descargando los datos: ", error);
+      setCargando(false);
     }
-
-    if (telefono.length !== 10) {
-      Alert.alert("Error", "El numero de telefono debe tener 10 digitos.");
-      return;
-    }
-
-    if (!correo.includes('@') || !correo.includes('.')) {
-      Alert.alert("Error", "Por favor, ingrese un correo electrónico valido.");
-      return;
-    }
-    
-    if (password.length < 6) {
-      Alert.alert("Error", "La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
-
-    Alert.alert(
-      'Registro exitoso',
-      `Hola ${nombre}, tu registro ha sido exitoso.`,
-      [
-        {
-          text: 'Continuar',
-          onPress: () => {
-            setPantallaActual('bienvenida');
-          }
-        }
-      ]
-    );
   };
 
-  const iniciarNuevoRegistro = () => {
-    setNombre('');
-    setCorreo('');
-    setTelefono('');
-    setPassword('');
-    setPantallaActual('registro1');
-  };
-
-  if (pantallaActual === 'bienvenida') {
+  // PANTALLA DE CARGA (Renderizado condicional)
+  // Si 'cargando' es true, mostramos una ruedita nativa del celular
+  if (cargando) {
     return (
-      <View style={styles.contenedorCentrado}>
-        <Text style={styles.tituloPrincipal}>¡Bienvenido, {nombre}!</Text>
-        <Text style={styles.subtitulo}>Tu registro ha sido exitoso.</Text>
-        
-        <View style={styles.botonEspaciado}>
-          <Button title="Nuevo registro" onPress={iniciarNuevoRegistro} color="#005691" />
-        </View>
+      <View style={styles.pantallaCentrada}>
+        <ActivityIndicator size="large" color="#005691" />
+        <Text style={styles.textoCarga}>Descargando perfiles...</Text>
       </View>
     );
   }
 
-  return(
+
+  return (
     <View style={styles.contenedor}>
-      <Text style={styles.tituloPrincipal}>Registrar Cuenta</Text>
+      <Text style={styles.tituloPrincipal}>Directorio Global</Text>
 
-      <Text style={styles.etiqueta}>Nombre Completo</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ej: Julian Quinones"
-        value={nombre}
-        onChangeText={setNombre}
+      <FlatList
+        data={usuarios}
+      
+        keyExtractor={(item) => item.email}
+        renderItem={({ item }) => (
+          <View style={styles.tarjetaUsuario}>
+
+            {/* Nuevo Componente: Image.
+                Para imágenes de internet, se usa la propiedad 'uri' (Uniform Resource Identifier) */}
+            <Image
+              source={{ uri: item.picture.large }}
+              style={styles.imagenPerfil}
+            />
+
+            <View style={styles.infoUsuario}>
+              <Text style={styles.nombreUsuario}>
+                {item.name.first} {item.name.last}
+              </Text>
+              <Text style={styles.correoUsuario}>{item.email}</Text>
+              <Text style={styles.paisUsuario}>{item.location.country}</Text>
+            </View>
+
+          </View>
+        )}
       />
-
-      <Text style={styles.etiqueta}>Telefono</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="1234567890"
-        value={telefono}
-        onChangeText={setTelefono}
-        keyboardType="phone-pad"
-        maxLength={10}
-      />
-
-      <Text style={styles.etiqueta}>Correo Electronico</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="ejemplo@correo.com"
-        value={correo}
-        onChangeText={setCorreo}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-
-      <Text style={styles.etiqueta}>Contraseña</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="********"
-        secureTextEntry={true}
-        value={password}
-        onChangeText={setPassword}
-      />
-
-      <View style={styles.botonEspaciado}>
-        <Button title="Registrar" onPress={validarRegistro} color="#7d0143" />
-      </View>
-
     </View>
   )
 }
 
-// ZONA DE ESTILOS (El diseño visual estructurado)
+// ESTILOS VISUALES
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
     backgroundColor: '#f4f7f6',
-    paddingTop: 70,
-    paddingHorizontal: 25,
+    paddingTop: 60,
+    paddingHorizontal: 20,
   },
-  contenedorCentrado: {
+  pantallaCentrada: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: '#ffffff',
+  },
+  textoCarga: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666',
+  },
+  tituloPrincipal: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  tarjetaUsuario: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 15,
+    elevation: 3, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  imagenPerfil: {
+    width: 70,
+    height: 70,
+    borderRadius: 35, 
+    marginRight: 15,
+  },
+  infoUsuario: {
+    flex: 1, 
     justifyContent: 'center',
     alignItems: 'center',
     padding: 30,
@@ -170,7 +163,18 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontSize: 16,
   },
-  botonEspaciado: {
-    marginTop: 15,
+  nombreUsuario: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222',
+  },
+  correoUsuario: {
+    fontSize: 14,
+    color: '#005691',
+    marginBottom: 4,
+  },
+  paisUsuario: {
+    fontSize: 14,
+    color: '#777',
   }
 });
