@@ -1,249 +1,222 @@
-import { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, Image, ActivityIndicator, Keyboard, Animated } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import * as Location from 'expo-location';
+
+const CIUDADES_PRUEBA = [
+    //top 10 coidades mas pobladas
+  { nombre: 'Local (GPS)', lat: null, lon: null },
+  { nombre: 'Tokio (Japón)', lat: 35.6762, lon: 139.6503 },
+  { nombre: 'Nueva Delhi (India)', lat: 28.6139, lon: 77.2090 },
+  { nombre: 'Shanghái (China)', lat: 31.2304, lon: 121.4737 },
+  { nombre: 'São Paulo (Brasil)', lat: -23.5505, lon: -46.6333 },
+  { nombre: 'CDMX (México)', lat: 19.4326, lon: -99.1332 },
+  { nombre: 'El Cairo (Egipto)', lat: 30.0444, lon: 31.2357 },
+  { nombre: 'Bombay (India)', lat: 19.0760, lon: 72.8777 },
+  { nombre: 'Pekín (China)', lat: 39.9042, lon: 116.4074 },
+  { nombre: 'Daca (Bangladés)', lat: 23.8103, lon: 90.4125 },
+  { nombre: 'Osaka (Japón)', lat: 34.6937, lon: 135.5023 },
+];
 
 export default function App() {
-  const [busqueda, setBusqueda] = useState('');
-  const [resultados, setResultados] = useState([]);
-  const [cargando, setCargando] = useState(false);
-  const [cancionActiva, setCancionActiva] = useState(null);
-  const [sonidoActual, setSonidoActual] = useState(null);
-  const [estaReproduciendo, setEstaReproduciendo] = useState(false);
+  const [ciudad, setCiudad] = useState('Buscando...');
+  const [clima, setClima] = useState(null);
+  const [calidadAire, setCalidadAire] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
 
-  const AnimacionEcualizador = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    AnimacionEcualizador.stopAnimation();
-    AnimacionEcualizador.setValue(0);
-
-    if (estaReproduciendo) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(AnimacionEcualizador, { toValue: 1, duration: 300, useNativeDriver: false }),
-          Animated.timing(AnimacionEcualizador, { toValue: 0, duration: 300, useNativeDriver: false }),
-        ])
-      ).start();
-    }
-  }, [estaReproduciendo, cancionActiva]);
-
-  const altoBarra1 = AnimacionEcualizador.interpolate({ inputRange: [0, 1], outputRange: [8, 22] });
-  const altoBarra2 = AnimacionEcualizador.interpolate({ inputRange: [0, 1], outputRange: [24, 10] });
-  const altoBarra3 = AnimacionEcualizador.interpolate({ inputRange: [0, 1], outputRange: [12, 18] });
-
-  const buscarMusica = async () => {
-    if (busqueda.trim() === '') return;
-
-    Keyboard.dismiss(); 
-    setCargando(true); 
-
-    try {
-      const terminoLimpio = busqueda.trim().replace(/ /g, '+');
-      const url = `https://itunes.apple.com/search?term=${terminoLimpio}&media=music&limit=20`;
-
-      const respuesta = await fetch(url);
-      const json = await respuesta.json();
-      setResultados(json.results); 
-    } catch (error) {
-      console.error('Error al buscar música:', error);
-    } finally {
-      setCargando(false); 
-    }
+  // 1. DICCIONARIOS DE TRADUCCIÓN VISUAL (Fondos dinámicos)
+  const obtenerInfoClima = (codigo) => {
+    if (codigo === 0) return { texto: 'Despejado', icono: 'sunny', color: '#FFD700', fondo: '#2B7ACE' }; // Azul cielo
+    if (codigo >= 1 && codigo <= 3) return { texto: 'Nublado', icono: 'cloud', color: '#FFFFFF', fondo: '#546E7A' }; // Gris azulado
+    if (codigo >= 45 && codigo <= 48) return { texto: 'Niebla', icono: 'cloud-offline', color: '#D3D3D3', fondo: '#78909C' }; // Gris claro
+    if (codigo >= 51 && codigo <= 67) return { texto: 'Lluvia', icono: 'rainy', color: '#87CEFA', fondo: '#37474F' }; // Gris oscuro tormenta
+    if (codigo >= 71 && codigo <= 77) return { texto: 'Nieve', icono: 'snow', color: '#FFFFFF', fondo: '#81D4FA' }; // Azul hielo
+    if (codigo >= 95) return { texto: 'Tormenta', icono: 'thunderstorm', color: '#FFA500', fondo: '#263238' }; // Casi negro
+    return { texto: 'Desconocido', icono: 'help-circle', color: '#FFFFFF', fondo: '#0B101E' };
   };
 
-  const monitorDeReproduccion = (estado) => {
-    if (estado.didJustFinish) {
-      setEstaReproduciendo(false);
-      setCancionActiva(null);
-    }
+  const obtenerInfoAire = (aqi) => {
+    if (aqi <= 20) return { texto: 'Excelente', color: '#00E676' };
+    if (aqi <= 40) return { texto: 'Buena', color: '#98FB98' };
+    if (aqi <= 60) return { texto: 'Moderada', color: '#FFCA28' };
+    if (aqi <= 80) return { texto: 'Mala', color: '#FF7043' };
+    return { texto: 'Peligrosa', color: '#D32F2F' };
   };
 
-  const reproducirCancion = async (cancion) => {
+  // 2. LÓGICA DE EXTRACCIÓN (Promesas en paralelo)
+  const obtenerDatos = async (latPrueba = null, lonPrueba = null, nombrePrueba = null) => {
+    setCargando(true);
+    setError(null);
+
     try {
-      if (sonidoActual) {
-        await sonidoActual.unloadAsync();
+      let lat = latPrueba;
+      let lon = lonPrueba;
+
+      // Si no pasamos coordenadas de prueba, usamos el GPS real
+      if (!lat || !lon) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setError('Permiso de ubicación denegado.');
+          setCargando(false);
+          return;
+        }
+
+        const ubicacion = await Location.getCurrentPositionAsync({});
+        lat = ubicacion.coords.latitude;
+        lon = ubicacion.coords.longitude;
+        
+        const direccion = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        setCiudad(direccion.length > 0 ? (direccion[0].city || direccion[0].region) : 'Tu Ubicación');
+      } else {
+        setCiudad(nombrePrueba);
       }
 
-      setCancionActiva(cancion);
-      setEstaReproduciendo(true);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      // Preparamos las dos URLs (Clima General y Calidad del Aire)
+      const urlClima = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
+      const urlAire = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=european_aqi`;
+      
+      // EL TRUCO: Promise.all ejecuta ambas peticiones al mismo tiempo
+      const [resClima, resAire] = await Promise.all([
+        fetch(urlClima),
+        fetch(urlAire)
+      ]);
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: cancion.previewUrl }, 
-        { shouldPlay: true }, 
-        monitorDeReproduccion 
-      );
+      const jsonClima = await resClima.json();
+      const jsonAire = await resAire.json();
+      
+      setClima({
+        actual: jsonClima.current,
+        diario: jsonClima.daily
+      });
+      setCalidadAire(jsonAire.current.european_aqi);
 
-      setSonidoActual(sound); 
-    } catch (error) {
-      console.error('Error al reproducir la canción:', error);
+    } catch (err) {
+      setError('Error al conectar con los satélites.');
+    } finally {
+      setCargando(false);
     }
   };
 
-  const alternarPlayPause = async () => {
-    if (!sonidoActual) return;
+  useEffect(() => { obtenerDatos(); }, []);
 
-    if (estaReproduciendo) {
-      await sonidoActual.pauseAsync();
-      setEstaReproduciendo(false);
-    } else {
-      await sonidoActual.playAsync();
-      setEstaReproduciendo(true);
-    }
-  };
+  // 3. PANTALLAS DE ESPERA
+  if (cargando) {
+    return (
+      <View style={[styles.contenedor, { justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color="#ffffff" />
+        <Text style={styles.textoGeneral}>Sincronizando datos...</Text>
+      </View>
+    );
+  }
 
-  useEffect(() => {
-    return sonidoActual ? () => {
-      sonidoActual.unloadAsync();
-    } : undefined;
-  }, [sonidoActual]);
+  if (error) return (
+    <View style={[styles.contenedor, { justifyContent: 'center' }]}><Text style={styles.textoGeneral}>{error}</Text></View>
+  );
+
+  // 4. RENDERIZADO VISUAL
+  const infoVisual = obtenerInfoClima(clima?.actual?.weather_code);
+  const infoAire = obtenerInfoAire(calidadAire);
 
   return (
-    <View style={styles.contenedor}>
-      <View style={styles.encabezado}>
-        <Text style={styles.tituloHeader}>Explorar Música</Text>
-        <View style={styles.contenedorBusqueda}>
-          <TextInput
-            style={styles.input}
-            placeholder="Buscar canción o artista..."
-            placeholderTextColor="#888"
-            value={busqueda}
-            onChangeText={setBusqueda}
-            onSubmitEditing={buscarMusica} 
-          />
-          <TouchableOpacity style={styles.botonBuscar} onPress={buscarMusica}>
-            <Ionicons name="search" size={24} color="white" />
-          </TouchableOpacity>
+    // Inyectamos el color de fondo dinámico directamente al contenedor padre
+    <View style={[styles.contenedor, { backgroundColor: infoVisual.fondo }]}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        
+        <View style={styles.cabecera}>
+          <Ionicons name="location-sharp" size={24} color="white" />
+          <Text style={styles.textoCiudad}>{ciudad}</Text>
         </View>
-      </View>
 
-      {cargando ? (
-        <View style={styles.zonaCentrada}>
-          <ActivityIndicator size="large" color="#A259FF" />
-        </View>
-      ) : (
-        <FlatList
-          data={resultados}
-          keyExtractor={(item) => item.trackId.toString()}
-          contentContainerStyle={{ paddingBottom: cancionActiva ? 90 : 20 }}
-          renderItem={({ item }) => {
-            const esLaActiva = cancionActiva?.trackId === item.trackId;
+        {/* --- BLOQUE CENTRAL (Diseño centrado con píldora) --- */}
+        <View style={styles.seccionPrincipal}>
+          <Ionicons name={infoVisual.icono} size={140} color={infoVisual.color} />
+          <Text style={styles.textoTemperatura}>{Math.round(clima?.actual?.temperature_2m)}°</Text>
+          <Text style={styles.textoDescripcion}>{infoVisual.texto}</Text>
 
-            return (
-              <TouchableOpacity style={styles.tarjetaCancion} onPress={() => reproducirCancion(item)}>
-                <Image source={{ uri: item.artworkUrl100 }} style={styles.portada} />
-                
-                <View style={styles.infoCancion}>
-                  <Text style={[styles.tituloCancion, esLaActiva && { color: '#A259FF' }]} numberOfLines={1}>
-                    {item.trackName}
-                  </Text>
-                  <Text style={styles.artistaCancion} numberOfLines={1}>{item.artistName}</Text>
-                </View>
-
-                {/* --- EL DIBUJO DE LAS BARRITAS --- */}
-                {esLaActiva && estaReproduciendo ? (
-                  <View style={styles.contenedorEcualizador}>
-                    <Animated.View style={[styles.barraEcualizador, { height: altoBarra1 }]} />
-                    <Animated.View style={[styles.barraEcualizador, { height: altoBarra2 }]} />
-                    <Animated.View style={[styles.barraEcualizador, { height: altoBarra3 }]} />
-                  </View>
-                ) : (
-                  <Ionicons name="play-circle" size={32} color={esLaActiva ? "#A259FF" : "#444"} />
-                )}
-              </TouchableOpacity>
-            );
-          }}
-        />
-      )}
-
-      {/* Mini reproductor inferior */}
-      {cancionActiva && (
-        <View style={styles.miniReproductor}>
-          <View style={styles.interiorMiniReproductor}>
-            {/* Se agregó la portada miniatura que faltaba */}
-            <Image source={{ uri: cancionActiva.artworkUrl100 }} style={styles.portadaMini} />
-            
-            <View style={styles.infoMini}>
-              <Text style={styles.tituloMini} numberOfLines={1}>{cancionActiva.trackName}</Text>
-              <Text style={styles.artistaMini} numberOfLines={1}>{cancionActiva.artistName}</Text>
-            </View>
-
-            <TouchableOpacity onPress={alternarPlayPause} style={styles.botonPlayPause}>
-              <Ionicons
-                name={estaReproduciendo ? "pause-circle" : "play-circle"}
-                size={40}
-                color="white"
-              />
-            </TouchableOpacity>
+          {/* Detalles simplificados: Sensación, Max y Min en una cápsula oscura */}
+          <View style={styles.filaTemperaturas}>
+            <Text style={styles.textoSensacion}>Sensación: {Math.round(clima?.actual?.apparent_temperature)}°</Text>
+            <View style={styles.divisor} />
+            <Ionicons name="arrow-up" size={16} color="white" />
+            <Text style={styles.textoMinMax}>{Math.round(clima?.diario?.temperature_2m_max[0])}°</Text>
+            <View style={styles.divisor} />
+            <Ionicons name="arrow-down" size={16} color="white" />
+            <Text style={styles.textoMinMax}>{Math.round(clima?.diario?.temperature_2m_min[0])}°</Text>
           </View>
         </View>
-      )}
+
+        {/* --- TARJETAS INFERIORES (2 Cuadradas, 1 Rectangular) --- */}
+        <View style={styles.gridTarjetas}>
+          <View style={styles.tarjetaCuadrada}>
+            <Ionicons name="water-outline" size={32} color="#87CEFA" />
+            <Text style={styles.valorDetalle}>{clima?.actual?.relative_humidity_2m}%</Text>
+            <Text style={styles.etiquetaDetalle}>Humedad</Text>
+          </View>
+
+          <View style={styles.tarjetaCuadrada}>
+            <Ionicons name="leaf-outline" size={32} color="#98FB98" />
+            <Text style={styles.valorDetalle}>{clima?.actual?.wind_speed_10m}</Text>
+            <Text style={styles.etiquetaDetalle}>km/h Viento</Text>
+          </View>
+        </View>
+
+        <View style={styles.tarjetaRectangular}>
+          <View>
+            <Text style={styles.etiquetaDetalle}>Calidad del Aire (AQI)</Text>
+            <Text style={[styles.valorDetalle, { color: infoAire.color }]}>{infoAire.texto}</Text>
+          </View>
+          <Ionicons name="speedometer-outline" size={40} color={infoAire.color} />
+        </View>
+
+        {/* --- MODO PRUEBAS (Botones para simular otros países) --- */}
+        <Text style={styles.tituloPruebas}>Laboratorio de Pruebas:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollPruebas}>
+          {CIUDADES_PRUEBA.map((c, index) => (
+            <TouchableOpacity 
+              key={index} 
+              style={styles.botonPrueba} 
+              onPress={() => obtenerDatos(c.lat, c.lon, c.nombre)}>
+              <Text style={styles.textoBotonPrueba}>{c.nombre}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+      </ScrollView>
     </View>
   );
 }
 
+
+// 5. ESTILOS (Glassmorphism dinámico y UI centrada)
 const styles = StyleSheet.create({
-  // Fondo base: Casi negro para que los colores resalten
-  contenedor: { flex: 1, backgroundColor: '#0d0514', paddingTop: 50 },
+  contenedor: { flex: 1 }, 
+  scroll: { flexGrow: 1, paddingTop: 60, alignItems: 'center', paddingBottom: 40 },
+  textoGeneral: { color: 'white', marginTop: 15 },
   
-  // Textos de arriba
-  encabezado: { paddingHorizontal: 15, paddingBottom: 10 },
-  tituloHeader: { color: 'white', fontSize: 28, fontWeight: 'bold', marginBottom: 15 },
-  contenedorBusqueda: { flexDirection: 'row', marginBottom: 10 },
-  
-  // La caja gris oscura donde escribe el usuario
-  input: { flex: 1, backgroundColor: '#1a1025', color: '#ffffff', height: 50, borderRadius: 25, paddingHorizontal: 20, fontSize: 16 },
-  
-  // El botón morado redondo (#A259FF)
-  botonBuscar: { backgroundColor: '#A259FF', width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
-  
-  // Para que la ruedita morada quede justo en medio de la pantalla
-  zonaCentrada: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
-  // Diseño de cada bloque de canción en la lista
-  tarjetaCancion: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 15, marginBottom: 15, backgroundColor: '#1a1025', padding: 10, borderRadius: 10 },
-  portada: { width: 50, height: 50, borderRadius: 5 },
-  infoCancion: { flex: 1, marginLeft: 15, marginRight: 10, justifyContent: 'center' },
-  tituloCancion: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  artistaCancion: { color: '#888', fontSize: 14 },
+  cabecera: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  textoCiudad: { color: 'white', fontSize: 28, fontWeight: '600', marginLeft: 8 },
 
-  // --- DISEÑO DEL ECUALIZADOR (Las barritas) ---
-  contenedorEcualizador: {
-    flexDirection: 'row',
-    alignItems: 'flex-end', // El truco: Se alinean al piso, así crecen hacia arriba
-    height: 24, 
-    width: 24,
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
-  },
-  barraEcualizador: {
-    width: 4,
-    backgroundColor: '#A259FF', // Morado
-    borderRadius: 2,
-  },
+  seccionPrincipal: { alignItems: 'center', marginBottom: 40 },
+  textoTemperatura: { color: 'white', fontSize: 130, fontWeight: '200', marginTop: -20, marginBottom: -15 },
+  textoDescripcion: { color: 'white', fontSize: 26, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 15 },
+  
+  // La "Cápsula" oscura para las temperaturas secundarias
+  filaTemperaturas: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
+  textoSensacion: { color: 'white', fontSize: 16, fontWeight: '500', marginRight: 5 },
+  textoMinMax: { color: 'white', fontSize: 16, fontWeight: '600', marginHorizontal: 5 },
+  divisor: { height: 15, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', marginHorizontal: 8 },
 
-  // --- DISEÑO DEL REPRODUCTOR FLOTANTE ---
-  miniReproductor: {
-    position: 'absolute', // El truco 2: Lo arranca del fondo y lo deja "volando"
-    bottom: 20,           // A 20 pixeles del límite inferior del celular
-    left: 10,
-    right: 10,
-    backgroundColor: '#A259FF', 
-    borderRadius: 15,
-    elevation: 10,        // Sombra en Android
-    shadowColor: '#000',  // Sombra en iPhone
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-  },
-  interiorMiniReproductor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-  },
-  portadaMini: { width: 40, height: 40, borderRadius: 8 },
-  infoMini: { flex: 1, marginLeft: 12 },
-  tituloMini: { color: 'white', fontSize: 15, fontWeight: 'bold' },
-  artistaMini: { color: '#e0c3ff', fontSize: 13 }, // Morado muy clarito para no competir con el título
-  botonPlayPause: { paddingHorizontal: 5 },
+  gridTarjetas: { flexDirection: 'row', justifyContent: 'space-between', width: '90%', marginBottom: 15 },
+  tarjetaCuadrada: { backgroundColor: 'rgba(255,255,255,0.15)', padding: 20, borderRadius: 25, width: '48%', alignItems: 'center', borderTopWidth: 1, borderLeftWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  
+  tarjetaRectangular: { backgroundColor: 'rgba(255,255,255,0.15)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '90%', padding: 20, borderRadius: 25, borderTopWidth: 1, borderLeftWidth: 1, borderColor: 'rgba(255,255,255,0.3)', marginBottom: 40 },
+  
+  valorDetalle: { color: 'white', fontSize: 22, fontWeight: 'bold', marginTop: 5 },
+  etiquetaDetalle: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '500' },
+
+  tituloPruebas: { color: 'rgba(255,255,255,0.5)', alignSelf: 'flex-start', marginLeft: 20, marginBottom: 10, fontSize: 12, textTransform: 'uppercase' },
+  scrollPruebas: { width: '100%', paddingHorizontal: 15 },
+  botonPrueba: { backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, marginRight: 10, height: 40 },
+  textoBotonPrueba: { color: 'white', fontSize: 14, fontWeight: '500' }
 });
